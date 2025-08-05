@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>엔이 게시판</title>
+  <style>
+    body { font-family: sans-serif; background: #fafafa; margin: 0; padding: 0; }
+    header { background: #007bff; color: white; padding: 15px; text-align: center; font-size: 24px; }
+    #post-list { max-width: 600px; margin: 20px auto; }
+    .post {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 0 8px #ccc;
+      padding: 15px;
+      margin-bottom: 12px;
+    }
+    .author {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .author img {
+      width: 40px; height: 40px; border-radius: 50%; margin-right: 10px;
+    }
+    #newPostForm {
+      max-width: 600px;
+      margin: 20px auto;
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 0 8px #ccc;
+      display: flex;
+      flex-direction: column;
+    }
+    #newPostForm textarea {
+      resize: none;
+      min-height: 80px;
+      margin-bottom: 10px;
+      padding: 10px;
+      font-size: 16px;
+    }
+    #newPostForm button {
+      align-self: flex-end;
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    #logoutBtn {
+      position: fixed;
+      top: 15px;
+      right: 15px;
+      background: #ff4d4d;
+      border: none;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #loading {
+      text-align: center;
+      margin: 20px 0;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <header>엔이 게시판</header>
+  <button id="logoutBtn">로그아웃</button>
+
+  <form id="newPostForm">
+    <textarea id="postContent" placeholder="새 글을 작성하세요..." required></textarea>
+    <button type="submit">글 올리기</button>
+  </form>
+
+  <div id="post-list"></div>
+  <div id="loading" style="display:none;">로딩 중...</div>
+
+  <script type="module">
+    import { auth, db } from './firebase-config.js';
+    import {
+      collection,
+      query,
+      orderBy,
+      limit,
+      startAfter,
+      getDocs,
+      addDoc,
+      doc,
+      getDoc,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+    import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-auth.js";
+
+    let lastVisible = null;
+    let loading = false;
+
+    const postList = document.getElementById("post-list");
+    const loadingDiv = document.getElementById("loading");
+    const newPostForm = document.getElementById("newPostForm");
+    const postContent = document.getElementById("postContent");
+    const logoutBtn = document.getElementById("logoutBtn");
+
+    let currentUser = null;
+    let currentUserData = null;
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        alert("로그인이 필요합니다.");
+        location.href = "login.html";
+        return;
+      }
+      currentUser = user;
+
+      // 유저 데이터 가져오기
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      currentUserData = userDoc.data();
+
+      loadPosts();
+    });
+
+    logoutBtn.addEventListener("click", async () => {
+      await signOut(auth);
+      location.href = "login.html";
+    });
+
+    newPostForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!postContent.value.trim()) return;
+
+      try {
+        await addDoc(collection(db, "posts"), {
+          content: postContent.value.trim(),
+          authorId: currentUser.uid,
+          authorName: currentUserData.nickname,
+          authorAvatar: currentUserData.avatarUrl,
+          createdAt: serverTimestamp()
+        });
+        postContent.value = "";
+        clearPosts();
+        loadPosts(true);
+      } catch (error) {
+        alert("글 올리기 실패: " + error.message);
+      }
+    });
+
+    async function loadPosts(isReload = false) {
+      if (loading) return;
+      loading = true;
+      loadingDiv.style.display = "block";
+
+      let q = query(
+        collection(db, "posts"),
+        orderBy("createdAt", "desc"),
+        limit(10)
+      );
+
+      if (lastVisible && !isReload) {
+        q = query(q, startAfter(lastVisible));
+      } else if (isReload) {
+        lastVisible = null;
+        clearPosts();
+      }
+
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        loadingDiv.innerText = "더 이상 글이 없습니다.";
+        loading = false;
+        return;
+      }
+
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        const postDiv = document.createElement("div");
+        postDiv.className = "post";
+
+        const authorDiv = document.createElement("div");
+        authorDiv.className = "author";
+
+        const avatarImg = document.createElement("img");
+        avatarImg.src = data.authorAvatar || "https://via.placeholder.com/40";
+        avatarImg.alt = data.authorName;
+
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = data.authorName || "익명";
+
+        authorDiv.appendChild(avatarImg);
+        authorDiv.appendChild(nameSpan);
+
+        const contentP = document.createElement("p");
+        contentP.textContent = data.content;
+
+        postDiv.appendChild(authorDiv);
+        postDiv.appendChild(contentP);
+
+        postList.appendChild(postDiv);
+      });
+
+      lastVisible = snapshot.docs[snapshot.docs.length - 1];
+      loading = false;
+      loadingDiv.style.display = "none";
+    }
+
+    function clearPosts() {
+      postList.innerHTML = "";
+    }
+
+    window.addEventListener("scroll", () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 100) {
+        loadPosts();
+      }
+    });
+  </script>
+</body>
+</html>
