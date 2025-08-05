@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>회원가입</title>
+  <style>
+    body { font-family: sans-serif; background: #f0f0f0; }
+    form { max-width: 300px; margin: 50px auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 8px #aaa; display: flex; flex-direction: column; }
+    input, button { margin-bottom: 12px; padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #ccc; }
+    button { background: #007bff; color: #fff; border: none; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <form id="signupForm">
+    <input type="email" id="email" placeholder="이메일" required />
+    <input type="password" id="password" placeholder="비밀번호" required />
+    <input type="text" id="nickname" placeholder="닉네임" required />
+    <input type="text" id="avatar" placeholder="프로필 이미지 URL" required />
+    <button type="submit">회원가입</button>
+  </form>
+
+  <script type="module">
+    import { auth, db } from './firebase-config.js';
+    import { createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-auth.js";
+    import { setDoc, doc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+
+    const form = document.getElementById("signupForm");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const email = form.email.value;
+      const password = form.password.value;
+      const nickname = form.nickname.value;
+      const avatarUrl = form.avatar.value;
+
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        await setDoc(doc(db, "users", user.uid), {
+          email,
+          nickname,
+          avatarUrl,
+          createdAt: new Date()
+        });
+
+        alert("회원가입 완료! 로그인 페이지로 이동합니다.");
+        location.href = "login.html";
+      } catch (error) {
+        alert("에러: " + error.message);
+      }
+    });
+  </script>
+</body>
+</html>
